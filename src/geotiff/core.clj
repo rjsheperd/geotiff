@@ -62,15 +62,17 @@
   [{[tlat tlng _] :translate 
     [slat slng _] :scale}
    width height out]
-   (let [in  (chan 1024)]
+   (let [in  (chan 1024)
+         ex  (java.util.concurrent.Executors/newFixedThreadPool 1)]
      (go-loop [[[src-x src-y] img] (<! in)]
        (if (nil? img)
-         (close! out)
+         (.submit ex ^Runnable
+           (fn [] (close! out)))
          (do 
            (println "got tile!")
            (time
            (let [tile ^Raster (.getData ^BufferedImage img) 
-                 pvals (time (vec (.getDataElements tile 0 0 width height nil)))]
+                 pvals (vec (.getDataElements tile 0 0 width height nil))]
              (dotimes [y height]
               (let [lng (+ (* (+ (max 0 (dec y)) src-y) slng) tlng)] 
                (comment "Beware, while y=0 it will always read byte 0!")
@@ -78,7 +80,11 @@
                  (let [pval (get pvals (* x y))]
                    (if (> pval 0)
                      (let [lat (+ tlat (* (+ src-x x) slat))]
-                       (>! out [[lat lng] pval])))))))))
+                       ;; testar sem enviar!
+                       (.submit ex 
+                          ^Runnable 
+                          (fn [] (>!! out [[lat lng] pval])))
+                       ))))))))
            (recur (<! in)))))
      in))
 
