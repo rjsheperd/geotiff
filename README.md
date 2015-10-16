@@ -1,6 +1,6 @@
 # geotiff
 
-Read GeoTIFF in clojure.
+Experimenting with raw read GeoTIFF in clojure.
 
 ## Usage
 

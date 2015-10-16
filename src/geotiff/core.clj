@@ -80,7 +80,6 @@
                  (let [pval (get pvals (* x y))]
                    (if (> pval 0)
                      (let [lat (+ tlat (* (+ src-x x) slat))]
-                       ;; testar sem enviar!
                        (.submit ex 
                           ^Runnable 
                           (fn [] (>!! out [[lat lng] pval])))
