@@ -100,7 +100,7 @@
   ([img out] 
    (let [file (io/file img)
          fin  ^FileInputStream (FileInputStream. file)
-         iis  ^ImageInputStream (ImageIO/createImageInputStream fin)
+         iis  (ImageIO/createImageInputStream fin)
          rdr  ^ImageReader (.next (ImageIO/getImageReaders iis))
          _    (.setInput rdr iis)
 
