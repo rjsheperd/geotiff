@@ -46,24 +46,23 @@
      {:raw metadata
       :height height
       :width width
-      :scale (vec scale )
+      :scale (vec scale)
       :translate (vec translate)
       :bbox [[(first translate) (second translate)]
              [(first translate)
-              (- (second translate) (* width (second scale)))] 
-             [(+ (first translate) (* height (first scale)))
-              (- (second translate) (* width (second scale)))] 
-             [(+ (first translate) (* height (first scale)))
+              (- (second translate) (* height (second scale)))] 
+             [(+ (first translate) (* width (first scale)))
+              (- (second translate) (* height (second scale)))] 
+             [(+ (first translate) (* width (first scale)))
               (second translate)]]}))
 
-(defn calc-lng
-  [^Integer y ^Integer src-y ^Double slng ^Double tlng]
-   (let [^Integer dec-y (dec y)]
-     (+ (* (+ (max 0 dec-y) src-y) slng) tlng)))
+(defn ^Double calc-lng
+  [^Integer x ^Integer src-x ^Double slng ^Double tlng]
+   (+ (* (+ x src-x) slng) tlng))
 
-(defn calc-lat
-  [^Integer x ^Integer src-x ^Integer slat ^Integer tlat]
-   (+ tlat (* (+ src-x x) slat)))
+(defn ^Double calc-lat
+  [^Integer y ^Integer src-y ^Integer slat ^Integer tlat]
+  (- tlat (* (+ y src-y) slat)))
 
 (defn ^Raster get-data
   [^BufferedImage img]
@@ -73,24 +72,34 @@
   [^ExecutorService ex ^Runnable fun]
   (.submit ex fun))
 
+(defn fix-val
+  [^Integer x]
+   (if (> x -1) x
+     (+ 256 x)))
+
 (defn tile-processor
-  [{[tlat tlng _] :translate [slat slng _] :scale} ^Integer width ^Integer height out]
+  [{[tlng tlat _] :translate [slng slat _] :scale} ^Integer width ^Integer height out]
    (let [in  (chan 1024)
          ex  ^ExecutorService (Executors/newFixedThreadPool 1)]
      (go-loop [[[src-x src-y] img] (<! in)]
        (if (nil? img)
          (submit ex (fn [] (close! out)))
          (let [^Raster tile (get-data img) 
-               pvals (vec (.getDataElements tile 0 0 width height nil))]
-           (dotimes [y height]
-            (let [lng (calc-lng y src-y slng tlng)]
-             (dotimes [x width]
-               (let [pval (get pvals (* x y))]
-                 (if (> pval 0)
-                   (let [lat (calc-lat x src-x slat tlat)]
-                     (submit ex (fn [] (>!! out [[lat lng] pval])))))))))
+               nbands (.getNumDataElements tile)
+               pvals  (vec (partition nbands (.getDataElements tile 0 0 width height nil)))]
+           (dotimes [i (count pvals)]
+             (let [y (Math/floor (/ i width))
+                   x (- i (* y width))
+                   lat (calc-lat y src-y slat tlat)
+                   lng (calc-lng x src-x slng tlng)
+                   bvals (mapv fix-val (get pvals i))]
+               (submit ex (fn [] (>!! out [[lng lat] bvals])))))
            (recur (<! in)))))
      in))
+
+(defn set-cut
+  [^ImageReadParam params ^Rectangle source]
+  (.setSourceRegion params source))
 
 (defn read-async
   ([img] 
@@ -107,7 +116,7 @@
          width  (.getWidth rdr 0)
          height (.getHeight rdr 0)
 
-         hsize  10
+         hsize  (/ 270 2)
          wsize  width
 
          buff   (.createBufferedImage ^ImageTypeSpecifier (.next (.getImageTypes rdr 0)) wsize hsize)
@@ -117,13 +126,12 @@
 
          tile-processor (tile-processor metadata wsize hsize out)]
      (go
-       (dotimes [x (/ width wsize)]
-         (dotimes [y (/ height hsize)]
-           (time
+       (dotimes [y (Math/ceil (/ height hsize))]
+         (dotimes [x (Math/ceil (/ width wsize))]
            (let [source (Rectangle. (* x wsize) (* y hsize) wsize hsize)]
-             (.setSourceRegion params source)
+             (set-cut params source)
              (>! tile-processor 
-               [[x y] (.read ^ImageReader rdr 0 params)])))))
+               [[(* x wsize) (* y hsize)] (.read ^ImageReader rdr 0 params)]))))
        (close! tile-processor)
        (.dispose rdr)
        (.close iis)

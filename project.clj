@@ -6,7 +6,7 @@
   :global-vars {*warn-on-reflection* true}
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/core.async "0.2.374"]
-                 [com.twelvemonkeys.imageio/imageio-tiff "3.1.1"]
+                 [com.twelvemonkeys.imageio/imageio-tiff "3.2.1"]
                  [org.apache.commons/commons-imaging "1.0-SNAPSHOT"]]
   :repositories [["apache.snapshots" "http://repository.apache.org/snapshots"]]
   :profiles {:uberjar {:aot :all}
