@@ -2,6 +2,7 @@
   (:require [clojure.java.io :as io])
   (:require [clojure.core.async :refer [<! <!! >! >!! go go-loop chan close!]])
   (:import  [javax.imageio ImageIO ImageReader ImageTypeSpecifier ImageReadParam]
+            [com.twelvemonkeys.imageio.plugins.tiff TIFFImageReader]
             [java.awt Rectangle]
             [java.awt Image]
             [java.awt.image BufferedImage Raster]
@@ -10,7 +11,7 @@
             [java.util.concurrent ExecutorService Executors]))
 
 (defn get-sizes
-  [img] 
+  [img]
    (let [file (io/file img)
          fin  ^FileInputStream (FileInputStream. file)
          iis  (ImageIO/createImageInputStream fin)
@@ -28,16 +29,16 @@
   [img]
   (apply hash-map
     (flatten
-      (map 
+      (map
         #(list (keyword (first %)) (second %))
       (map
         (fn [item] (.split (str item) ":"))
         (.getItems
-          (Imaging/getMetadata 
+          (Imaging/getMetadata
             (io/file img))))))))
 
 (defn get-metadata
-  [img] 
+  [img]
    (let [metadata (get-metadata-raw img)
          scale (map (fn [^String p] (Double/parseDouble (.trim p))) (.split ^String (:ModelPixelScaleTag metadata) ","))
          tie (partition 3 (map (fn [^String p] (Double/parseDouble (.trim p))) (.split ^String (:ModelTiepointTag metadata) ",")))
@@ -50,9 +51,9 @@
       :translate (vec translate)
       :bbox [[(first translate) (second translate)]
              [(first translate)
-              (- (second translate) (* height (second scale)))] 
+              (- (second translate) (* height (second scale)))]
              [(+ (first translate) (* width (first scale)))
-              (- (second translate) (* height (second scale)))] 
+              (- (second translate) (* height (second scale)))]
              [(+ (first translate) (* width (first scale)))
               (second translate)]]}))
 
@@ -84,7 +85,7 @@
      (go-loop [[[src-x src-y] img] (<! in)]
        (if (nil? img)
          (submit ex (fn [] (close! out)))
-         (let [^Raster tile (get-data img) 
+         (let [^Raster tile (get-data img)
                nbands (.getNumDataElements tile)
                pvals  (vec (partition nbands (.getDataElements tile 0 0 width height nil)))]
            (dotimes [i (count pvals)]
@@ -102,11 +103,11 @@
   (.setSourceRegion params source))
 
 (defn read-async
-  ([img] 
+  ([img]
    (let [out (chan 1024)]
      (read-async img out)
      out))
-  ([img out] 
+  ([img out]
    (let [file (io/file img)
          fin  ^FileInputStream (FileInputStream. file)
          iis  (ImageIO/createImageInputStream fin)
@@ -130,7 +131,7 @@
          (dotimes [x (Math/ceil (/ width wsize))]
            (let [source (Rectangle. (* x wsize) (* y hsize) wsize hsize)]
              (set-cut params source)
-             (>! tile-processor 
+             (>! tile-processor
                [[(* x wsize) (* y hsize)] (.read ^ImageReader rdr 0 params)]))))
        (close! tile-processor)
        (.dispose rdr)
@@ -144,7 +145,58 @@
      (read-async img out)
      (loop [pval (<!! out)]
        (if (not (nil? pval))
-         (do 
+         (do
            (fun pval)
            (recur (<!! out)))))))
-  
+
+
+(comment
+  (def file (io/file "fire-area-cog.tif"))
+  (def file (io/file "az-clip-header"))
+  (def ^BufferedImage bi (ImageIO/read file))
+  (.getWidth bi)
+  (.getHeight bi)
+  (.getNumXTiles bi)
+  (.getNumYTiles bi)
+  (.getType bi)
+  (.getRGB bi 2000 3000)
+
+  (def ^BufferedImage sbi (.getSubimage bi
+                                        (/ (.getWidth bi) 4)
+                                        (/ (.getHeight bi) 4)
+                                        (/ (.getWidth bi) 2)
+                                        (/ (.getHeight bi) 2)))
+
+  (.getWidth bi)
+  (.getWidth sbi)
+  (.getHeight sbi)
+
+  (io/file "fire-area-new-cog.tif")
+
+  (def fin (FileInputStream. file))
+  (def iss (ImageIO/createImageInputStream fin))
+  (def ^TIFFImageReader rdr (.next (ImageIO/getImageReadersByFormatName "tiff")))
+  (println rdr)
+  (.setInput rdr iss false)
+
+  (.getNumImages rdr true)
+  (.getWidth rdr 0)
+  (.getHeight rdr 0)
+  (.getRawImageType rdr 0)
+
+  (.isImageTiled rdr 0)
+  (.getTileWidth rdr 0)
+  (.getTileHeight rdr 0)
+  (.readTileRaster rdr 0 0 1)
+  (.getItems (.getImageMetadata rdr 0))
+
+  (def new-size (Rectangle. 1000 1000 1 1))
+  (def ^ImageReadParam param (.getDefaultReadParam rdr))
+  (.setSourceRegion param new-size)
+
+  (.read rdr 0 param)
+
+
+  (.getReaderFormatNames ImageIO)
+
+  )
